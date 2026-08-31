@@ -1,0 +1,28 @@
+{
+  "name": "xhs-eye-mcp",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "pretest": "npm run prepare:binaries",
+    "test": "node --test tests/*.test.mjs",
+    "typecheck": "tsc --noEmit",
+    "check": "npm run typecheck && npm test && npm run check:netlify",
+    "check:netlify": "node scripts/check-netlify-build.mjs",
+    "prepare:binaries": "node scripts/prepare-binaries.mjs"
+  },
+  "dependencies": {
+    "@derhuerst/ffprobe-static": "^5.3.0",
+    "@netlify/blobs": "^10.0.11",
+    "ffmpeg-static": "^5.3.0"
+  },
+  "devDependencies": {
+    "@netlify/functions": "^5.1.2",
+    "@types/node": "^26.4.0",
+    "esbuild": "^0.25.9",
+    "typescript": "^5.9.3"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
