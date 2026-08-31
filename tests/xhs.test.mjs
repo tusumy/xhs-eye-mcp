@@ -36,10 +36,10 @@ test("parses image note and chooses WB_DFT image", () => {
       data: {
         noteData: {
           noteId: "abc123",
-          title: "ä¸è±ç«ç«é¿",
-          desc: "ä»å¤©å»çç« ",
+          title: "三花猫站长",
+          desc: "今天去盖章",
           type: "normal",
-          user: { nickname: "ç¯ç¯" },
+          user: { nickname: "灯灯" },
           interactInfo: { likedCount: "18", collectedCount: "6", commentCount: "3" },
           imageList: [{
             infoList: [
@@ -47,23 +47,23 @@ test("parses image note and chooses WB_DFT image", () => {
               { imageScene: "WB_DFT", url: "https://sns-img-bd.xhscdn.com/high.jpg" },
             ],
           }],
-          commentData: { comments: [{ content: "å¥½å¯ç±" }] },
+          commentData: { comments: [{ content: "好可爱" }] },
         },
       },
     },
   };
   const note = parseXhsState(state, "https://www.xiaohongshu.com/explore/abc123?xsec_token=t");
-  assert.equal(note.title, "ä¸è±ç«ç«é¿");
-  assert.equal(note.author, "ç¯ç¯");
+  assert.equal(note.title, "三花猫站长");
+  assert.equal(note.author, "灯灯");
   assert.deepEqual(note.images, ["https://sns-img-bd.xhscdn.com/high.jpg"]);
   assert.equal(note.videoUrl, null);
-  assert.deepEqual(note.comments, ["å¥½å¯ç±"]);
+  assert.deepEqual(note.comments, ["好可爱"]);
 });
 
 test("prefers h264 masterUrl and supports origin video fallback", () => {
   const base = {
     noteData: { data: { noteData: {
-      title: "è§é¢",
+      title: "视频",
       desc: "vlog",
       video: { media: { stream: { h264: [{ masterUrl: "https://sns-video-bd.xhscdn.com/master.mp4" }] } } },
     } } },
@@ -105,17 +105,17 @@ test("collects first-screen comments stored beside note data", () => {
       data: {
         noteData: {
           noteId: "abc123",
-          title: "æ é¢",
-          desc: "æ­£æ",
+          title: "标题",
+          desc: "正文",
           imageList: [{ url: "https://sns-img-bd.xhscdn.com/a.jpg" }],
         },
         commentData: {
-          comments: [{ content: "ç¬¬ä¸æ¡" }, { content: "ç¬¬äºæ¡" }],
+          comments: [{ content: "第一条" }, { content: "第二条" }],
         },
       },
     },
   };
-  assert.deepEqual(parseXhsState(state, "https://www.xiaohongshu.com/explore/abc123").comments, ["ç¬¬ä¸æ¡", "ç¬¬äºæ¡"]);
+  assert.deepEqual(parseXhsState(state, "https://www.xiaohongshu.com/explore/abc123").comments, ["第一条", "第二条"]);
 });
 
 test("normalizes limits to 4-8 video frames and a 200 MB ceiling", () => {
@@ -160,7 +160,7 @@ test("streams an allowlisted video to disk and enforces its byte limit", async (
   assert.deepEqual(await readFile(destination), Buffer.from([1, 2, 3, 4, 5, 6]));
   await assert.rejects(
     downloadMediaToFile("https://sns-video-bd.xhscdn.com/video.mp4", join(dir, "too-big.mp4"), 5, 5_000),
-    /è¶è¿å®å¨å¤§å°éå¶/,
+    /超过安全大小限制/,
   );
 });
 
@@ -200,10 +200,10 @@ test("video notes return four ordered frames before cover images", async (t) => 
   const result = await peekXhs("https://xhslink.com/example", { maxFrames: 4, maxImages: 12, maxVideoMb: 10 });
   assert.equal(result.media.length, 12);
   assert.deepEqual(result.media.slice(0, 4).map((item) => item.label), [
-    "è§é¢æ½å¸§ 1/4",
-    "è§é¢æ½å¸§ 2/4",
-    "è§é¢æ½å¸§ 3/4",
-    "è§é¢æ½å¸§ 4/4",
+    "视频抽帧 1/4",
+    "视频抽帧 2/4",
+    "视频抽帧 3/4",
+    "视频抽帧 4/4",
   ]);
   assert.ok(result.media.slice(0, 4).every((item) => item.mimeType === "image/jpeg" && item.data.length > 0));
 });
@@ -218,6 +218,6 @@ test("a request-level deadline stops note work before network access", async (t)
   t.after(() => {
     globalThis.fetch = previousFetch;
   });
-  await assert.rejects(peekXhs("https://xhslink.com/example", {}, Date.now() - 1), /è¿è¡æ¶é/);
+  await assert.rejects(peekXhs("https://xhslink.com/example", {}, Date.now() - 1), /运行时限/);
   assert.equal(called, false);
 });
