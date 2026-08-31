@@ -340,7 +340,7 @@ export async function beginAuthorization(request: Request, store: Store): Promis
   await store.setJSON(`requests/${id}`, record, expiryOptions(record.expires_at));
   const clientName = escapeHtml(client.client_name);
   const callbackOrigin = escapeHtml(new URL(redirectUri).origin);
-  return html(200, `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>å°çº¢ä¹¦ç¼ç Â· ææ</title><style>:root{color-scheme:dark}body{margin:0;min-height:100vh;display:grid;place-items:center;background:#111016;color:#fff;font-family:-apple-system,BlinkMacSystemFont,sans-serif}.card{width:min(84vw,420px);padding:32px;border:1px solid #ffffff24;border-radius:28px;background:#ffffff0d;box-shadow:0 28px 80px #0009}h1{font-size:25px;margin:0 0 10px}p{color:#c9c3d3;line-height:1.55}.origin{font-size:13px;color:#91899e;word-break:break-all}input,button{box-sizing:border-box;width:100%;height:48px;border-radius:14px;font-size:16px}input{margin:14px 0 10px;padding:0 14px;border:1px solid #ffffff2e;background:#0c0b10;color:#fff}button{border:0;background:#e93f5d;color:#fff;font-weight:700}</style></head><body><main class="card"><h1>åè®¸ ${clientName} çå°çº¢ä¹¦</h1><p>ä»æäºè¯»åå°çº¢ä¹¦ç¬è®°ç xhs:read æéï¼ä¸åå«ä»»ä½åå¥æéã</p><p class="origin">ææç»æå°è¿åï¼${callbackOrigin}</p><form method="post" action="/oauth/approve"><input type="hidden" name="id" value="${id}"><input name="token" type="password" autocomplete="one-time-code" placeholder="ç²è´´å°çº¢ä¹¦ç¼çææç " required><button type="submit">åè®¸è¿æ¥</button></form></main></body></html>`);
+  return html(200, `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>小红书眼睛 · 授权</title><style>:root{color-scheme:dark}body{margin:0;min-height:100vh;display:grid;place-items:center;background:#111016;color:#fff;font-family:-apple-system,BlinkMacSystemFont,sans-serif}.card{width:min(84vw,420px);padding:32px;border:1px solid #ffffff24;border-radius:28px;background:#ffffff0d;box-shadow:0 28px 80px #0009}h1{font-size:25px;margin:0 0 10px}p{color:#c9c3d3;line-height:1.55}.origin{font-size:13px;color:#91899e;word-break:break-all}input,button{box-sizing:border-box;width:100%;height:48px;border-radius:14px;font-size:16px}input{margin:14px 0 10px;padding:0 14px;border:1px solid #ffffff2e;background:#0c0b10;color:#fff}button{border:0;background:#e93f5d;color:#fff;font-weight:700}</style></head><body><main class="card"><h1>允许 ${clientName} 看小红书</h1><p>仅授予读取小红书笔记的 xhs:read 权限，不包含任何写入权限。</p><p class="origin">授权结果将返回：${callbackOrigin}</p><form method="post" action="/oauth/approve"><input type="hidden" name="id" value="${id}"><input name="token" type="password" autocomplete="one-time-code" placeholder="粘贴小红书眼睛授权码" required><button type="submit">允许连接</button></form></main></body></html>`);
 }
 
 export async function approveAuthorization(request: Request, store: Store): Promise<Response> {
@@ -359,10 +359,10 @@ export async function approveAuthorization(request: Request, store: Store): Prom
   const requestKey = `requests/${id}`;
   const current = await loadForUpdate<AuthRequest>(store, requestKey);
   const record = current?.record;
-  if (!record || record.approved || Date.parse(record.expires_at) <= Date.now()) return html(400, "<!doctype html><meta charset=utf-8><p>ææå·²å¤±æï¼è¯·åå° ChatGPT éè¯ã</p>");
-  if (!expected || !supplied || !await safeSecretEqual(expected, supplied)) return html(403, "<!doctype html><meta charset=utf-8><p>ææç ä¸å¯¹ã</p>");
+  if (!record || record.approved || Date.parse(record.expires_at) <= Date.now()) return html(400, "<!doctype html><meta charset=utf-8><p>授权已失效，请回到 ChatGPT 重试。</p>");
+  if (!expected || !supplied || !await safeSecretEqual(expected, supplied)) return html(403, "<!doctype html><meta charset=utf-8><p>授权码不对。</p>");
   const claimed = await store.setJSON(requestKey, { ...record, approved: true }, { onlyIfMatch: current.etag, ...expiryOptions(record.expires_at) });
-  if (!claimed.modified) return html(400, "<!doctype html><meta charset=utf-8><p>ææå·²å¤±æï¼è¯·åå° ChatGPT éè¯ã</p>");
+  if (!claimed.modified) return html(400, "<!doctype html><meta charset=utf-8><p>授权已失效，请回到 ChatGPT 重试。</p>");
   const code = randomToken(32);
   const codeRecord: Code = {
     client_id: record.client_id,
