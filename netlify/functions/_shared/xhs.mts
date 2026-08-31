@@ -281,7 +281,9 @@ function safeMediaUrl(value: unknown): string | null {
   if (typeof value !== "string" || !value) return null;
   const normalized = value.replace(/\\u002F/gi, "/").replace(/\\\//g, "/");
   try {
-    return String(assertHttpUrl(normalized, "media"));
+    const candidate = new URL(normalized);
+    if (candidate.protocol === "http:") candidate.protocol = "https:";
+    return String(assertHttpUrl(String(candidate), "media"));
   } catch {
     return null;
   }

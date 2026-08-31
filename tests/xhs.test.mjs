@@ -60,6 +60,15 @@ test("parses image note and chooses WB_DFT image", () => {
   assert.deepEqual(note.comments, ["好可爱"]);
 });
 
+test("upgrades allowlisted Xiaohongshu CDN image URLs to HTTPS", () => {
+  const state = { noteData: { data: { noteData: {
+    title: "旧协议图片",
+    desc: "",
+    imageList: [{ infoList: [{ imageScene: "WB_DFT", url: "http://sns-webpic-qc.xhscdn.com/a.jpg" }] }],
+  } } } };
+  assert.deepEqual(parseXhsState(state, "https://xhslink.cn/o/test").images, ["https://sns-webpic-qc.xhscdn.com/a.jpg"]);
+});
+
 test("prefers h264 masterUrl and supports origin video fallback", () => {
   const base = {
     noteData: { data: { noteData: {
