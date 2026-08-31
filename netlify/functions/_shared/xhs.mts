@@ -79,13 +79,13 @@ function assertHttpUrl(raw: string, kind: "note" | "media"): URL {
   try {
     url = new URL(raw);
   } catch {
-    throw new Error("é¾æ¥æ ¼å¼ä¸å¯¹ï¼è¯·ä½¿ç¨å°çº¢ä¹¦åäº«é¾æ¥ã");
+    throw new Error("链接格式不对，请使用小红书分享链接。");
   }
-  if (url.username || url.password || url.port) throw new Error("é¾æ¥ä¸è½åå«è´¦å·ä¿¡æ¯æèªå®ä¹ç«¯å£ã");
-  if (kind === "media" && url.protocol !== "https:") throw new Error("åªä½é¾æ¥å¿é¡»ä½¿ç¨ HTTPSã");
-  if (kind === "note" && url.protocol !== "https:" && url.protocol !== "http:") throw new Error("åªæ¯æ HTTP(S) é¾æ¥ã");
+  if (url.username || url.password || url.port) throw new Error("链接不能包含账号信息或自定义端口。");
+  if (kind === "media" && url.protocol !== "https:") throw new Error("媒体链接必须使用 HTTPS。");
+  if (kind === "note" && url.protocol !== "https:" && url.protocol !== "http:") throw new Error("只支持 HTTP(S) 链接。");
   const allowed = kind === "note" ? isNoteHost(url.hostname) : isMediaHost(url.hostname);
-  if (!allowed) throw new Error(kind === "note" ? "è¿ä¸æ¯åæ¯æçå°çº¢ä¹¦é¾æ¥ã" : "åªä½å°åä¸å±äºå°çº¢ä¹¦ CDNã");
+  if (!allowed) throw new Error(kind === "note" ? "这不是受支持的小红书链接。" : "媒体地址不属于小红书 CDN。");
   return url;
 }
 
@@ -108,9 +108,9 @@ export function isAllowedMediaUrl(raw: string): boolean {
 }
 
 async function readLimited(response: Response, limit: number): Promise<Uint8Array> {
-  if (!response.ok) throw new Error(`å°çº¢ä¹¦è¿åäº HTTP ${response.status}`);
+  if (!response.ok) throw new Error(`小红书返回了 HTTP ${response.status}`);
   const announced = Number(response.headers.get("content-length") || 0);
-  if (announced > limit) throw new Error("è¿ååå®¹è¶è¿å®å¨å¤§å°éå¶ã");
+  if (announced > limit) throw new Error("返回内容超过安全大小限制。");
   if (!response.body) return new Uint8Array();
   const reader = response.body.getReader();
   const chunks: Uint8Array[] = [];
@@ -122,7 +122,7 @@ async function readLimited(response: Response, limit: number): Promise<Uint8Arra
     total += value.byteLength;
     if (total > limit) {
       await reader.cancel();
-      throw new Error("è¿ååå®¹è¶è¿å®å¨å¤§å°éå¶ã");
+      throw new Error("返回内容超过安全大小限制。");
     }
     chunks.push(value);
   }
@@ -139,7 +139,7 @@ async function fetchFollowingAllowedRedirects(rawUrl: string, deadline: number):
   let current = assertHttpUrl(rawUrl, "note");
   for (let hop = 0; hop < 6; hop += 1) {
     const remaining = deadline - Date.now();
-    if (remaining <= 0) throw new Error("å°çº¢ä¹¦é¡µé¢è¯»åè¶æ¶ã");
+    if (remaining <= 0) throw new Error("小红书页面读取超时。");
     const response = await fetch(current, {
       redirect: "manual",
       headers: {
@@ -151,15 +151,15 @@ async function fetchFollowingAllowedRedirects(rawUrl: string, deadline: number):
     });
     if (![301, 302, 303, 307, 308].includes(response.status)) return { response, finalUrl: String(current) };
     const location = response.headers.get("location");
-    if (!location) throw new Error("å°çº¢ä¹¦è·³è½¬ç¼ºå°ç®æ å°åã");
+    if (!location) throw new Error("小红书跳转缺少目标地址。");
     current = assertHttpUrl(String(new URL(location, current)), "note");
   }
-  throw new Error("å°çº¢ä¹¦é¾æ¥è·³è½¬æ¬¡æ°è¿å¤ã");
+  throw new Error("小红书链接跳转次数过多。");
 }
 
 function extractBalancedObject(source: string, start: number): string {
   const brace = source.indexOf("{", start);
-  if (brace < 0) throw new Error("é¡µé¢éæ²¡ææ¾å°ç¬è®°æ°æ®ã");
+  if (brace < 0) throw new Error("页面里没有找到笔记数据。");
   let depth = 0;
   let quote = "";
   let escaped = false;
@@ -181,7 +181,7 @@ function extractBalancedObject(source: string, start: number): string {
       if (depth === 0) return source.slice(brace, i + 1);
     }
   }
-  throw new Error("ç¬è®°æ°æ®ä¸å®æ´ã");
+  throw new Error("笔记数据不完整。");
 }
 
 export function replaceUndefinedOutsideStrings(source: string): string {
@@ -226,7 +226,7 @@ export function extractInitialState(html: string): unknown {
     index = html.indexOf(marker);
     if (index >= 0) break;
   }
-  if (index < 0) throw new Error("é¡µé¢éæ²¡ææ¾å° __INITIAL_STATE__ï¼é¾æ¥å¯è½å·²å¤±ææéè¦ç»å½ã");
+  if (index < 0) throw new Error("页面里没有找到 __INITIAL_STATE__，链接可能已失效或需要登录。");
   const raw = extractBalancedObject(html, index);
   try {
     return JSON.parse(raw);
@@ -269,7 +269,7 @@ function findNote(root: any): any {
     const children = Array.isArray(item.value) ? item.value : Object.values(item.value);
     for (const child of children) queue.push({ value: child, depth: item.depth + 1 });
   }
-  throw new Error("æ¾å°äºé¡µé¢æ°æ®ï¼ä½æ²¡è®¤åºç¬è®°ç»æï¼å°çº¢ä¹¦é¡µé¢ç»æå¯è½åäºã");
+  throw new Error("找到了页面数据，但没认出笔记结构；小红书页面结构可能变了。");
 }
 
 function stringValue(...values: any[]): string {
@@ -395,7 +395,7 @@ async function fetchMedia(rawUrl: string, limit: number, timeoutMs = 12_000): Pr
   const deadline = Date.now() + Math.max(1_000, timeoutMs);
   for (let hop = 0; hop < 5; hop += 1) {
     const remaining = deadline - Date.now();
-    if (remaining <= 0) throw new Error("åªä½ä¸è½½è¶æ¶ã");
+    if (remaining <= 0) throw new Error("媒体下载超时。");
     const response = await fetch(current, {
       redirect: "manual",
       headers: { "user-agent": MOBILE_UA, accept: "image/avif,image/webp,image/jpeg,image/*,video/mp4,*/*;q=0.5" },
@@ -403,20 +403,20 @@ async function fetchMedia(rawUrl: string, limit: number, timeoutMs = 12_000): Pr
     });
     if ([301, 302, 303, 307, 308].includes(response.status)) {
       const location = response.headers.get("location");
-      if (!location) throw new Error("åªä½è·³è½¬ç¼ºå°ç®æ å°åã");
+      if (!location) throw new Error("媒体跳转缺少目标地址。");
       current = assertHttpUrl(String(new URL(location, current)), "media");
       continue;
     }
     const bytes = await readLimited(response, limit);
     return { bytes, mimeType: (response.headers.get("content-type") || "application/octet-stream").split(";")[0] };
   }
-  throw new Error("åªä½é¾æ¥è·³è½¬æ¬¡æ°è¿å¤ã");
+  throw new Error("媒体链接跳转次数过多。");
 }
 
 async function writeLimited(response: Response, destination: string, limit: number): Promise<number> {
-  if (!response.ok) throw new Error(`å°çº¢ä¹¦è¿åäº HTTP ${response.status}`);
+  if (!response.ok) throw new Error(`小红书返回了 HTTP ${response.status}`);
   const announced = Number(response.headers.get("content-length") || 0);
-  if (announced > limit) throw new Error("è¿ååå®¹è¶è¿å®å¨å¤§å°éå¶ã");
+  if (announced > limit) throw new Error("返回内容超过安全大小限制。");
   const file = await open(destination, "wx");
   let total = 0;
   try {
@@ -429,12 +429,12 @@ async function writeLimited(response: Response, destination: string, limit: numb
       total += value.byteLength;
       if (total > limit) {
         await reader.cancel();
-        throw new Error("è¿ååå®¹è¶è¿å®å¨å¤§å°éå¶ã");
+        throw new Error("返回内容超过安全大小限制。");
       }
       let offset = 0;
       while (offset < value.byteLength) {
         const { bytesWritten } = await file.write(value, offset, value.byteLength - offset);
-        if (!bytesWritten) throw new Error("è§é¢æå­åå¥å¤±è´¥ã");
+        if (!bytesWritten) throw new Error("视频暂存写入失败。");
         offset += bytesWritten;
       }
     }
@@ -449,7 +449,7 @@ export async function downloadMediaToFile(rawUrl: string, destination: string, l
   const deadline = Date.now() + Math.max(1_000, timeoutMs);
   for (let hop = 0; hop < 5; hop += 1) {
     const remaining = deadline - Date.now();
-    if (remaining <= 0) throw new Error("åªä½ä¸è½½è¶æ¶ã");
+    if (remaining <= 0) throw new Error("媒体下载超时。");
     const response = await fetch(current, {
       redirect: "manual",
       headers: { "user-agent": MOBILE_UA, accept: "video/mp4,video/*,*/*;q=0.5" },
@@ -457,7 +457,7 @@ export async function downloadMediaToFile(rawUrl: string, destination: string, l
     });
     if ([301, 302, 303, 307, 308].includes(response.status)) {
       const location = response.headers.get("location");
-      if (!location) throw new Error("åªä½è·³è½¬ç¼ºå°ç®æ å°åã");
+      if (!location) throw new Error("媒体跳转缺少目标地址。");
       current = assertHttpUrl(String(new URL(location, current)), "media");
       continue;
     }
@@ -467,7 +467,7 @@ export async function downloadMediaToFile(rawUrl: string, destination: string, l
       mimeType: (response.headers.get("content-type") || "application/octet-stream").split(";")[0],
     };
   }
-  throw new Error("åªä½é¾æ¥è·³è½¬æ¬¡æ°è¿å¤ã");
+  throw new Error("媒体链接跳转次数过多。");
 }
 
 export function detectImageMime(bytes: Uint8Array): string | null {
@@ -483,7 +483,7 @@ async function normalizeImage(bytes: Uint8Array, _mimeType: string, timeoutMs = 
   const detected = detectImageMime(bytes);
   if (detected === "image/jpeg" && bytes.byteLength <= 360_000) return { bytes, mimeType: detected };
   if (!ffmpegPath) {
-    if (!detected) throw new Error("ååºåå®¹ä¸æ¯åæ¯æçå¾çã");
+    if (!detected) throw new Error("响应内容不是受支持的图片。");
     return { bytes, mimeType: detected };
   }
   const dir = await mkdtemp(join(tmpdir(), "xhs-eye-image-"));
@@ -502,22 +502,22 @@ async function normalizeImage(bytes: Uint8Array, _mimeType: string, timeoutMs = 
 }
 
 async function extractFrames(videoUrlValue: string, maxFrames: number, maxVideoMb: number, deadline: number): Promise<Array<{ mimeType: string; data: string; label: string }>> {
-  if (!ffmpegPath || !ffprobePath) throw new Error("æå¡å¨æ²¡æå®è£ ffmpegï¼å·²éåå°é¢åæå­ã");
+  if (!ffmpegPath || !ffprobePath) throw new Error("服务器没有安装 ffmpeg，已退回封面和文字。");
   const dir = await mkdtemp(join(tmpdir(), "xhs-eye-"));
   try {
     const beforeDownload = deadline - Date.now();
-    if (beforeDownload < 12_000) throw new Error("æ¬æ¬¡ååºå©ä½æ¶é´ä¸è¶³ï¼å·²è·³è¿è§é¢æ½å¸§ã");
+    if (beforeDownload < 12_000) throw new Error("本次响应剩余时间不足，已跳过视频抽帧。");
     const videoPath = join(dir, "video.mp4");
     await downloadMediaToFile(videoUrlValue, videoPath, maxVideoMb * 1024 * 1024, Math.min(34_000, beforeDownload - 8_000));
     const probeTimeout = Math.min(6_000, deadline - Date.now() - 5_000);
-    if (probeTimeout < 1_000) throw new Error("æ¬æ¬¡ååºå©ä½æ¶é´ä¸è¶³ï¼å·²è·³è¿è§é¢æ½å¸§ã");
+    if (probeTimeout < 1_000) throw new Error("本次响应剩余时间不足，已跳过视频抽帧。");
     const { stdout } = await execFileAsync(ffprobePath, ["-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", videoPath], { timeout: probeTimeout });
     const duration = Number(String(stdout).trim());
-    if (!Number.isFinite(duration) || duration <= 0) throw new Error("è¯»ä¸å°è§é¢æ¶é¿ã");
+    if (!Number.isFinite(duration) || duration <= 0) throw new Error("读不到视频时长。");
     const count = Math.max(4, Math.min(maxFrames, Math.ceil(duration / 8)));
     const framePattern = join(dir, "frame-%02d.jpg");
     const frameTimeout = deadline - Date.now() - 1_000;
-    if (frameTimeout < 2_000) throw new Error("æ¬æ¬¡ååºå©ä½æ¶é´ä¸è¶³ï¼å·²è·³è¿è§é¢æ½å¸§ã");
+    if (frameTimeout < 2_000) throw new Error("本次响应剩余时间不足，已跳过视频抽帧。");
     await execFileAsync(ffmpegPath, [
       "-y", "-v", "error", "-i", videoPath,
       "-vf", `fps=${count}/${duration},scale='min(640,iw)':-2`,
@@ -525,7 +525,7 @@ async function extractFrames(videoUrlValue: string, maxFrames: number, maxVideoM
     ], { timeout: frameTimeout, maxBuffer: 2 * 1024 * 1024 });
     let prefix = "frame";
     let files = (await readdir(dir)).filter((name) => /^frame-\d+\.jpg$/.test(name)).sort().slice(0, count);
-    if (files.length < 4) throw new Error("è§é¢ä¸è¶³ä»¥çæè³å° 4 å¼ æ½å¸§ã");
+    if (files.length < 4) throw new Error("视频不足以生成至少 4 张抽帧。");
 
     const readBlocks = async () => await Promise.all(files.map(async (name) => ({
       mimeType: "image/jpeg",
@@ -536,7 +536,7 @@ async function extractFrames(videoUrlValue: string, maxFrames: number, maxVideoM
     for (const [width, quality] of [[480, 14], [320, 18]] as const) {
       if (blocks.reduce((total, frame) => total + frame.data.length, 0) <= VIDEO_FRAME_BASE64_LIMIT) break;
       const remaining = deadline - Date.now() - 500;
-      if (remaining < 1_000) throw new Error("è§é¢æ½å¸§æ¥è¿ååºä¸éï¼ä½å·²æ²¡æè¶³å¤æ¶é´åç¼©ã");
+      if (remaining < 1_000) throw new Error("视频抽帧接近响应上限，但已没有足够时间压缩。");
       const outputPrefix = `frame-${width}`;
       await execFileAsync(ffmpegPath, [
         "-y", "-v", "error", "-framerate", "1", "-i", join(dir, `${prefix}-%02d.jpg`),
@@ -545,11 +545,11 @@ async function extractFrames(videoUrlValue: string, maxFrames: number, maxVideoM
       ], { timeout: remaining, maxBuffer: 2 * 1024 * 1024 });
       prefix = outputPrefix;
       files = (await readdir(dir)).filter((name) => new RegExp(`^${outputPrefix}-\\d+\\.jpg$`).test(name)).sort().slice(0, count);
-      if (files.length < 4) throw new Error("è§é¢å¸§åç¼©åæ°éä¸è¶³ã");
+      if (files.length < 4) throw new Error("视频帧压缩后数量不足。");
       blocks = await readBlocks();
     }
-    if (blocks.reduce((total, frame) => total + frame.data.length, 0) > VIDEO_FRAME_BASE64_LIMIT) throw new Error("è§é¢æ½å¸§è¶è¿åæ¬¡ååºå¾çæ»ééå¶ã");
-    return blocks.map((frame, index) => ({ ...frame, label: `è§é¢æ½å¸§ ${index + 1}/${blocks.length}` }));
+    if (blocks.reduce((total, frame) => total + frame.data.length, 0) > VIDEO_FRAME_BASE64_LIMIT) throw new Error("视频抽帧超过单次响应图片总量限制。");
+    return blocks.map((frame, index) => ({ ...frame, label: `视频抽帧 ${index + 1}/${blocks.length}` }));
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
@@ -572,18 +572,18 @@ export function normalizePeekOptions(options: PeekOptions = {}): Required<PeekOp
 export async function peekXhs(rawUrl: string, options: PeekOptions = {}, requestDeadline = Date.now() + PEEK_BUDGET_MS): Promise<PeekResult> {
   const { imageMode, maxImages, maxFrames, maxVideoMb } = normalizePeekOptions(options);
   const deadline = Math.min(requestDeadline, Date.now() + PEEK_BUDGET_MS);
-  if (deadline <= Date.now()) throw new Error("æ¬æ¬¡è¯·æ±å·²è¶è¿è¿è¡æ¶éã");
+  if (deadline <= Date.now()) throw new Error("本次请求已超过运行时限。");
   const note = await fetchXhsNote(rawUrl, deadline);
   const media: PeekResult["media"] = [];
   const warnings: string[] = [];
   let encodedBytes = 0;
   const appendMedia = (item: { mimeType: string; data: string; label: string }): boolean => {
     if (media.length >= MAX_RESPONSE_IMAGES) {
-      warnings.push("å·²è¾¾å°åæ¬¡ååºå¾çæ°éä¸éï¼å©ä½å¾çä¿çä¸ºç´é¾ã");
+      warnings.push("已达到单次响应图片数量上限，剩余图片保留为直链。");
       return false;
     }
     if (encodedBytes + item.data.length > MCP_MEDIA_BASE64_LIMIT) {
-      warnings.push("å¾çåå®¹æ¥è¿å®¢æ·ç«¯ååºä¸éï¼å©ä½å¾çå·²æ¹ç¨ç´é¾ä¿çã");
+      warnings.push("图片内容接近客户端响应上限，剩余图片已改用直链保留。");
       return false;
     }
     media.push(item);
@@ -595,25 +595,25 @@ export async function peekXhs(rawUrl: string, options: PeekOptions = {}, request
       try {
         const frames = await extractFrames(note.videoUrl, maxFrames, maxVideoMb, deadline);
         for (const frame of frames) {
-          if (!appendMedia(frame)) throw new Error("è§é¢æ½å¸§è¶è¿åæ¬¡ååºå¾çæ»ééå¶ã");
+          if (!appendMedia(frame)) throw new Error("视频抽帧超过单次响应图片总量限制。");
         }
       } catch (error) {
-        warnings.push(`è§é¢æ½å¸§å¤±è´¥ï¼${error instanceof Error ? error.message : "æªç¥éè¯¯"}`);
+        warnings.push(`视频抽帧失败：${error instanceof Error ? error.message : "未知错误"}`);
       }
     }
     for (const [index, url] of note.images.slice(0, maxImages).entries()) {
       try {
         const remaining = deadline - Date.now();
         if (remaining < 3_000) {
-          warnings.push("æ¬æ¬¡ååºæ¥è¿è¿è¡æ¶éï¼å©ä½éå¾å·²ä¿çä¸ºç´é¾ã");
+          warnings.push("本次响应接近运行时限，剩余配图已保留为直链。");
           break;
         }
         const fetched = await fetchMedia(url, IMAGE_LIMIT, Math.min(8_000, Math.max(1_000, remaining - 1_500)));
         const item = await normalizeImage(fetched.bytes, fetched.mimeType, Math.min(8_000, Math.max(1_000, deadline - Date.now() - 500)));
-        if (!item.mimeType.startsWith("image/")) throw new Error("ä¸æ¯å¾çååº");
-        if (!appendMedia({ mimeType: item.mimeType, data: Buffer.from(item.bytes).toString("base64"), label: `éå¾ ${index + 1}/${Math.min(note.images.length, maxImages)}` })) break;
+        if (!item.mimeType.startsWith("image/")) throw new Error("不是图片响应");
+        if (!appendMedia({ mimeType: item.mimeType, data: Buffer.from(item.bytes).toString("base64"), label: `配图 ${index + 1}/${Math.min(note.images.length, maxImages)}` })) break;
       } catch (error) {
-        warnings.push(`ç¬¬ ${index + 1} å¼ éå¾ä¸è½½å¤±è´¥ï¼${error instanceof Error ? error.message : "æªç¥éè¯¯"}`);
+        warnings.push(`第 ${index + 1} 张配图下载失败：${error instanceof Error ? error.message : "未知错误"}`);
       }
     }
   }
@@ -622,14 +622,14 @@ export async function peekXhs(rawUrl: string, options: PeekOptions = {}, request
 
 export function noteSummary(note: XhsNote, warnings: string[] = []): string {
   const lines = [
-    `æ é¢ï¼${note.title || "ï¼æ æ é¢ï¼"}`,
-    `ä½èï¼${note.author || "ï¼æªç¥ï¼"}`,
-    `ç±»åï¼${note.videoUrl ? "è§é¢ç¬è®°" : "å¾æç¬è®°"}`,
-    `æ­£æï¼${note.description || "ï¼æ æ­£æï¼"}`,
-    `äºå¨ï¼ç¹èµ ${note.stats.liked ?? "?"}ï½æ¶è ${note.stats.collected ?? "?"}ï½è¯è®º ${note.stats.comments ?? "?"}ï½åäº« ${note.stats.shared ?? "?"}`,
-    `åé¾æ¥ï¼${note.canonicalUrl}`,
+    `标题：${note.title || "（无标题）"}`,
+    `作者：${note.author || "（未知）"}`,
+    `类型：${note.videoUrl ? "视频笔记" : "图文笔记"}`,
+    `正文：${note.description || "（无正文）"}`,
+    `互动：点赞 ${note.stats.liked ?? "?"}｜收藏 ${note.stats.collected ?? "?"}｜评论 ${note.stats.comments ?? "?"}｜分享 ${note.stats.shared ?? "?"}`,
+    `原链接：${note.canonicalUrl}`,
   ];
-  if (note.comments.length) lines.push(`é¦å±è¯è®ºï¼\n${note.comments.map((text, index) => `${index + 1}. ${text}`).join("\n")}`);
-  if (warnings.length) lines.push(`è¯»åæç¤ºï¼\n${warnings.map((text) => `- ${text}`).join("\n")}`);
+  if (note.comments.length) lines.push(`首屏评论：\n${note.comments.map((text, index) => `${index + 1}. ${text}`).join("\n")}`);
+  if (warnings.length) lines.push(`读取提示：\n${warnings.map((text) => `- ${text}`).join("\n")}`);
   return lines.join("\n");
 }
