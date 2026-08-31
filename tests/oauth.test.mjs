@@ -122,6 +122,13 @@ test("authorization code flow binds resource, verifies PKCE, and rotates refresh
   const code = callback.searchParams.get("code");
   assert.ok(code);
 
+  const duplicateApproval = await approveAuthorization(formRequest(`${origin}/oauth/approve`, {
+    id: requestId,
+    token: approvalToken,
+  }), store);
+  assert.equal(duplicateApproval.status, 302);
+  assert.equal(new URL(duplicateApproval.headers.get("location")).searchParams.get("code"), code);
+
   const tokenRequest = () => formRequest(`${origin}/oauth/token`, {
     grant_type: "authorization_code",
     code,
