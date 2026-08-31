@@ -25,7 +25,7 @@ const ffprobePath = firstExisting([
 ]);
 
 export const MOBILE_UA = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1";
-const NOTE_HOSTS = new Set(["xhslink.com", "www.xhslink.com", "xiaohongshu.com", "www.xiaohongshu.com", "m.xiaohongshu.com"]);
+const NOTE_HOSTS = new Set(["xhslink.com", "www.xhslink.com", "xhslink.cn", "www.xhslink.cn", "xiaohongshu.com", "www.xiaohongshu.com", "m.xiaohongshu.com"]);
 const MEDIA_ROOT_HOSTS = new Set(["xhscdn.com", "xhscdn.net"]);
 const MEDIA_HOST_SUFFIXES = [".xhscdn.com", ".xhscdn.net"];
 const HTML_LIMIT = 8 * 1024 * 1024;

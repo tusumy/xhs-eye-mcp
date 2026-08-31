@@ -89,7 +89,9 @@ test("rejects non-XHS media URLs rather than creating an open proxy", () => {
 test("accepts only XHS page URLs and XHS CDN media URLs", () => {
   assert.equal(isAllowedNoteUrl("https://www.xiaohongshu.com/explore/abc?xsec_token=token"), true);
   assert.equal(isAllowedNoteUrl("http://xhslink.com/a1b2c3"), true);
+  assert.equal(isAllowedNoteUrl("https://xhslink.cn/o/2jgW6v8rMT5"), true);
   assert.equal(isAllowedNoteUrl("https://xhslink.com.evil.example/a"), false);
+  assert.equal(isAllowedNoteUrl("https://xhslink.cn.evil.example/a"), false);
   assert.equal(isAllowedNoteUrl("https://xhslink.com:8443/a"), false);
 
   assert.equal(isAllowedMediaUrl("https://sns-img-bd.xhscdn.com/image.jpg"), true);
