@@ -22,6 +22,7 @@ const PROTOCOLS = new Set(["2026-07-28", "2025-11-25", "2025-06-18", "2025-03-26
 const MAX_BATCH_SIZE = 8;
 const REQUEST_BUDGET_MS = 52_000;
 const MAX_MCP_BODY_BYTES = 256 * 1024;
+const CACHE_SCHEMA_VERSION = 2;
 
 function json(status: number, body: unknown): Response {
   return Response.json(body, { status, headers: { "cache-control": "no-store" } });
@@ -204,7 +205,7 @@ export async function handleRpc(message: Json, request: Request, access: AccessG
         maxVideoMb: envInteger("XHS_MAX_VIDEO_MB", 200, 10, 200),
       } as const;
       const cacheHours = envInteger("XHS_CACHE_HOURS", 6, 1, 24);
-      const cacheKey = await digest(JSON.stringify({ url: args.url, ...peekOptions }));
+      const cacheKey = await digest(JSON.stringify({ version: CACHE_SCHEMA_VERSION, url: args.url, ...peekOptions }));
       const cacheStore = getStore({ name: "xhs-eye-cache" });
       let cached: Awaited<ReturnType<typeof peekXhs>> | null = null;
       try {
