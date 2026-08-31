@@ -72,8 +72,8 @@ async function readMcpJson(request: Request, deadline: number): Promise<unknown>
   return JSON.parse(Buffer.concat(chunks.map((chunk) => Buffer.from(chunk)), total).toString("utf8"));
 }
 
-export function toolDefinitions(): Json[] {
-  const securitySchemes = authScheme();
+export function toolDefinitions(requireOAuth = true): Json[] {
+  const securitySchemes = requireOAuth ? authScheme() : undefined;
   return [{
     name: "xhs_peek",
     title: "看小红书笔记",
@@ -115,9 +115,9 @@ export function toolDefinitions(): Json[] {
       required: ["title", "author", "description", "canonical_url", "image_urls", "video_url", "stats", "comments", "warnings"],
       additionalProperties: false,
     },
-    securitySchemes,
+    ...(securitySchemes ? { securitySchemes } : {}),
     _meta: {
-      securitySchemes,
+      ...(securitySchemes ? { securitySchemes } : {}),
       "openai/toolInvocation/invoking": "正在读取小红书…",
       "openai/toolInvocation/invoked": "小红书读取完成",
     },
@@ -168,7 +168,7 @@ function toolError(id: unknown, text: string, meta?: Json): Json {
   });
 }
 
-export async function handleRpc(message: Json, request: Request, access: AccessGrant | null, authStore: Store | null, deadline = Date.now() + REQUEST_BUDGET_MS): Promise<Json | null> {
+export async function handleRpc(message: Json, request: Request, access: AccessGrant | null, authStore: Store | null, deadline = Date.now() + REQUEST_BUDGET_MS, requireOAuth = true): Promise<Json | null> {
   const id = message.id;
   const method = message.method;
   if (message.jsonrpc !== "2.0" || typeof method !== "string") return rpcError(id, -32600, "Invalid Request");
@@ -183,7 +183,7 @@ export async function handleRpc(message: Json, request: Request, access: AccessG
     });
   }
   if (method === "ping") return rpcResult(id, {});
-  if (method === "tools/list") return rpcResult(id, { resultType: "complete", tools: toolDefinitions(), ttlMs: 300_000, cacheScope: "public" });
+  if (method === "tools/list") return rpcResult(id, { resultType: "complete", tools: toolDefinitions(requireOAuth), ttlMs: 300_000, cacheScope: "public" });
   if (method === "tools/call") {
     if (message.params?.name !== "xhs_peek") return rpcError(id, -32602, `Unknown tool: ${String(message.params?.name || "")}`);
     if (!access) return toolError(id, "请先授权小红书读取权限。", { "mcp/www_authenticate": [authChallenge(request)] });
@@ -255,8 +255,8 @@ export async function handleRpc(message: Json, request: Request, access: AccessG
   return rpcError(id, -32601, "Method not found");
 }
 
-export async function handleMcp(request: Request, access: AccessGrant | null, authStore: Store, deadline = Date.now() + REQUEST_BUDGET_MS): Promise<Response> {
-  if (request.method !== "POST") return access ? new Response(null, { status: 405, headers: { allow: "POST" } }) : unauthorized(request);
+export async function handleMcp(request: Request, access: AccessGrant | null, authStore: Store, deadline = Date.now() + REQUEST_BUDGET_MS, requireOAuth = true): Promise<Response> {
+  if (request.method !== "POST") return requireOAuth && !access ? unauthorized(request) : new Response(null, { status: 405, headers: { allow: "POST" } });
   let input: unknown;
   try {
     input = await readMcpJson(request, deadline);
@@ -273,14 +273,14 @@ export async function handleMcp(request: Request, access: AccessGrant | null, au
     const output: Json[] = [];
     for (const entry of input) {
       const response = entry && typeof entry === "object"
-        ? await handleRpc(entry as Json, request, access, authStore, deadline)
+        ? await handleRpc(entry as Json, request, access, authStore, deadline, requireOAuth)
         : rpcError(null, -32600, "Invalid Request");
       if (response) output.push(response);
     }
     return output.length ? json(200, output) : new Response(null, { status: 202 });
   }
   if (!input || typeof input !== "object") return json(200, rpcError(null, -32600, "Invalid Request"));
-  const output = await handleRpc(input as Json, request, access, authStore, deadline);
+  const output = await handleRpc(input as Json, request, access, authStore, deadline, requireOAuth);
   return output ? json(200, output) : new Response(null, { status: 202 });
 }
 
@@ -297,8 +297,16 @@ export default async (request: Request): Promise<Response> => {
   if (pathname === "/mcp") {
     const deadline = Date.now() + REQUEST_BUDGET_MS;
     try {
-      const access = await withinDeadline(getAccess(request, authStore), deadline, 3_000);
-      return await handleMcp(request, access, authStore, deadline);
+      const clientAddress = request.headers.get("x-nf-client-connection-ip")
+        || request.headers.get("x-forwarded-for")?.split(",")[0]?.trim()
+        || "unknown";
+      const access: AccessGrant = {
+        clientId: `anonymous:${await digest(clientAddress)}`,
+        resource: `${new URL(request.url).origin}/mcp`,
+        scope: "xhs:read",
+        tokenKey: "anonymous",
+      };
+      return await handleMcp(request, access, authStore, deadline, false);
     } catch (error) {
       if (error instanceof Error && error.message === "request_deadline_exceeded") return json(503, { error: "request_deadline_exceeded" });
       throw error;

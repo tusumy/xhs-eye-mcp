@@ -14,6 +14,13 @@ test("xhs_peek is read-only, OAuth protected, and capped at eight frames", () =>
   assert.ok(tool.outputSchema.required.includes("comments"));
 });
 
+test("no-auth mode does not advertise OAuth on the tool", () => {
+  const [tool] = toolDefinitions(false);
+  assert.equal(tool.securitySchemes, undefined);
+  assert.equal(tool._meta.securitySchemes, undefined);
+  assert.equal(tool.annotations.readOnlyHint, true);
+});
+
 test("initialize and tools/list return current complete MCP results", async () => {
   const request = new Request("https://xhs-eye.example/mcp", { method: "POST" });
   const initialized = await handleRpc({
@@ -44,6 +51,23 @@ test("unauthorized tool calls carry the ChatGPT OAuth challenge", async () => {
   assert.match(challenge, /resource_metadata="https:\/\/xhs-eye\.example\/\.well-known\/oauth-protected-resource\/mcp"/);
   assert.match(challenge, /error="insufficient_scope"/);
   assert.match(challenge, /error_description=/);
+});
+
+test("no-auth MCP lists xhs_peek without OAuth metadata", async () => {
+  const request = new Request("https://xhs-eye.example/mcp", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 4, method: "tools/list" }),
+  });
+  const response = await handleMcp(request, {
+    clientId: "anonymous:test",
+    resource: "https://xhs-eye.example/mcp",
+    scope: "xhs:read",
+    tokenKey: "anonymous",
+  }, {}, Date.now() + 5_000, false);
+  const body = await response.json();
+  assert.equal(body.result.tools[0].name, "xhs_peek");
+  assert.equal(body.result.tools[0].securitySchemes, undefined);
 });
 
 test("MCP rejects oversized JSON-RPC batches", async () => {
