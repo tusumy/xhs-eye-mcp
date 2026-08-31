@@ -76,13 +76,13 @@ export function toolDefinitions(): Json[] {
   const securitySchemes = authScheme();
   return [{
     name: "xhs_peek",
-    title: "çå°çº¢ä¹¦ç¬è®°",
-    description: "è¯»åä¸ä¸ªå°çº¢ä¹¦åäº«é¾æ¥çæ é¢ãæ­£æãä½èãäºå¨æ°æ®ãé¦å±è¯è®ºåéå¾ï¼å¦ææ¯è§é¢ç¬è®°ï¼ä¼ä¸è½½è§é¢å¹¶æé¡ºåºååæ½å¸§ï¼è®©æ¨¡ååçè¿ç¯ç»ä¸æ ·çè§£è§é¢åå®¹ãç¨æ·åæ¥ xhslink.com æå¸¦ xsec_token çå°çº¢ä¹¦é¾æ¥å¹¶æ³è®©ä½ çåå®¹æ¶è°ç¨ã",
+    title: "看小红书笔记",
+    description: "读取一个小红书分享链接的标题、正文、作者、互动数据、首屏评论和配图；如果是视频笔记，会下载视频并按顺序均匀抽帧，让模型像看连环画一样理解视频内容。用户发来 xhslink.com 或带 xsec_token 的小红书链接并想让你看内容时调用。",
     inputSchema: {
       type: "object",
       properties: {
-        url: { type: "string", minLength: 10, maxLength: 2048, description: "å°çº¢ä¹¦ App åäº«å¾å°ç xhslink.com ç­é¾ï¼æå¸¦ xsec_token çå®æ´ç¬è®°é¾æ¥ã" },
-        image_mode: { type: "string", enum: ["blocks", "url"], default: "blocks", description: "blocks ä¼è¿åçæ­£çå¾çåè§é¢æ½å¸§ï¼url åªè¿åæå­ååªä½ç´é¾ï¼ç¨äºä¸æ¯æå¾çåå®¹åçå®¢æ·ç«¯ã" },
+        url: { type: "string", minLength: 10, maxLength: 2048, description: "小红书 App 分享得到的 xhslink.com 短链，或带 xsec_token 的完整笔记链接。" },
+        image_mode: { type: "string", enum: ["blocks", "url"], default: "blocks", description: "blocks 会返回真正的图片和视频抽帧；url 只返回文字和媒体直链，用于不支持图片内容块的客户端。" },
         max_images: { type: "integer", minimum: 1, maximum: 12, default: 9 },
         max_frames: { type: "integer", minimum: 4, maximum: 8, default: 8 },
       },
@@ -118,8 +118,8 @@ export function toolDefinitions(): Json[] {
     securitySchemes,
     _meta: {
       securitySchemes,
-      "openai/toolInvocation/invoking": "æ­£å¨è¯»åå°çº¢ä¹¦â¦",
-      "openai/toolInvocation/invoked": "å°çº¢ä¹¦è¯»åå®æ",
+      "openai/toolInvocation/invoking": "正在读取小红书…",
+      "openai/toolInvocation/invoked": "小红书读取完成",
     },
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
   }];
@@ -134,17 +134,17 @@ type ToolArguments = {
 
 function integerArgument(value: unknown, fallback: number, minimum: number, maximum: number, name: string): number {
   if (value === undefined) return fallback;
-  if (!Number.isInteger(value) || Number(value) < minimum || Number(value) > maximum) throw new Error(`${name} å¿é¡»æ¯ ${minimum}â${maximum} çæ´æ°ã`);
+  if (!Number.isInteger(value) || Number(value) < minimum || Number(value) > maximum) throw new Error(`${name} 必须是 ${minimum}–${maximum} 的整数。`);
   return Number(value);
 }
 
 function parseToolArguments(value: unknown): ToolArguments {
-  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("å·¥å·åæ°å¿é¡»æ¯å¯¹è±¡ã");
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("工具参数必须是对象。");
   const args = value as Json;
   const allowed = new Set(["url", "image_mode", "max_images", "max_frames"]);
-  if (Object.keys(args).some((key) => !allowed.has(key))) throw new Error("å·¥å·åæ°åå«ä¸æ¯æçå­æ®µã");
-  if (typeof args.url !== "string" || args.url.trim().length < 10 || args.url.trim().length > 2_048) throw new Error("url å¿é¡»æ¯ææçå°çº¢ä¹¦é¾æ¥ã");
-  if (args.image_mode !== undefined && args.image_mode !== "blocks" && args.image_mode !== "url") throw new Error("image_mode åªè½æ¯ blocks æ urlã");
+  if (Object.keys(args).some((key) => !allowed.has(key))) throw new Error("工具参数包含不支持的字段。");
+  if (typeof args.url !== "string" || args.url.trim().length < 10 || args.url.trim().length > 2_048) throw new Error("url 必须是有效的小红书链接。");
+  if (args.image_mode !== undefined && args.image_mode !== "blocks" && args.image_mode !== "url") throw new Error("image_mode 只能是 blocks 或 url。");
   return {
     url: args.url.trim(),
     image_mode: args.image_mode === "url" ? "url" : "blocks",
@@ -186,17 +186,17 @@ export async function handleRpc(message: Json, request: Request, access: AccessG
   if (method === "tools/list") return rpcResult(id, { resultType: "complete", tools: toolDefinitions(), ttlMs: 300_000, cacheScope: "public" });
   if (method === "tools/call") {
     if (message.params?.name !== "xhs_peek") return rpcError(id, -32602, `Unknown tool: ${String(message.params?.name || "")}`);
-    if (!access) return toolError(id, "è¯·åææå°çº¢ä¹¦è¯»åæéã", { "mcp/www_authenticate": [authChallenge(request)] });
+    if (!access) return toolError(id, "请先授权小红书读取权限。", { "mcp/www_authenticate": [authChallenge(request)] });
     let args: ToolArguments;
     try {
       args = parseToolArguments(message.params?.arguments || {});
     } catch (error) {
-      return toolError(id, `åæ°ä¸æ­£ç¡®ï¼${error instanceof Error ? error.message : "æªç¥éè¯¯"}`);
+      return toolError(id, `参数不正确：${error instanceof Error ? error.message : "未知错误"}`);
     }
-    if (!authStore) return toolError(id, "ææå­å¨ææ¶ä¸å¯ç¨ï¼è¯·ç¨åéè¯ã");
+    if (!authStore) return toolError(id, "授权存储暂时不可用，请稍后重试。");
     try {
-      if (Date.now() >= deadline - 2_000) return toolError(id, "æ¬æ¬¡è¯·æ±å·²æ¥è¿è¿è¡æ¶éï¼è¯·éè¯ã");
-      if (!await withinDeadline(consumeRateLimit(authStore, access), deadline, 3_000)) return toolError(id, "è¯»åå¤ªé¢ç¹ï¼è¯·ç¨ååè¯ã");
+      if (Date.now() >= deadline - 2_000) return toolError(id, "本次请求已接近运行时限，请重试。");
+      if (!await withinDeadline(consumeRateLimit(authStore, access), deadline, 3_000)) return toolError(id, "读取太频繁，请稍后再试。");
       const peekOptions = {
         imageMode: args.image_mode,
         maxImages: args.max_images,
@@ -212,17 +212,17 @@ export async function handleRpc(message: Json, request: Request, access: AccessG
       } catch {
         cached = null;
       }
-      if (!cached && Date.now() >= deadline - 3_000) return toolError(id, "æ¬æ¬¡è¯·æ±å·²æ¥è¿è¿è¡æ¶éï¼è¯·éè¯ã");
+      if (!cached && Date.now() >= deadline - 3_000) return toolError(id, "本次请求已接近运行时限，请重试。");
       const result = cached || await peekXhs(args.url, peekOptions, deadline);
       if (!cached) {
         if (Date.now() < deadline - 1_000) {
           try {
             await withinDeadline(writeCache(cacheStore, cacheKey, result, cacheHours), deadline, 500);
           } catch {
-            result.warnings.push("ç¼å­ææ¶ä¸å¯ç¨ï¼æ¬æ¬¡è¯»åç»ææªç¼å­ã");
+            result.warnings.push("缓存暂时不可用，本次读取结果未缓存。");
           }
         } else {
-          result.warnings.push("æ¬æ¬¡ååºæ¥è¿è¿è¡æ¶éï¼è¯»åç»ææªç¼å­ã");
+          result.warnings.push("本次响应接近运行时限，读取结果未缓存。");
         }
       }
       const content: Json[] = [{ type: "text", text: noteSummary(result.note, result.warnings) }];
@@ -231,7 +231,7 @@ export async function handleRpc(message: Json, request: Request, access: AccessG
         content.push({ type: "image", data: item.data, mimeType: item.mimeType });
       }
       if (args.image_mode === "url") {
-        content.push({ type: "text", text: `éå¾ç´é¾ï¼\n${result.note.images.join("\n") || "ï¼æ ï¼"}${result.note.videoUrl ? `\nè§é¢ç´é¾ï¼\n${result.note.videoUrl}` : ""}` });
+        content.push({ type: "text", text: `配图直链：\n${result.note.images.join("\n") || "（无）"}${result.note.videoUrl ? `\n视频直链：\n${result.note.videoUrl}` : ""}` });
       }
       return rpcResult(id, {
         resultType: "complete",
@@ -249,7 +249,7 @@ export async function handleRpc(message: Json, request: Request, access: AccessG
         },
       });
     } catch (error) {
-      return toolError(id, `å°çº¢ä¹¦ç¬è®°è¯»åå¤±è´¥ï¼${error instanceof Error ? error.message : "æªç¥éè¯¯"}`);
+      return toolError(id, `小红书笔记读取失败：${error instanceof Error ? error.message : "未知错误"}`);
     }
   }
   return rpcError(id, -32601, "Method not found");
