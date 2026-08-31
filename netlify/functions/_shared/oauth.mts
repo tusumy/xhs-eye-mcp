@@ -27,6 +27,7 @@ type AuthRequest = {
   issuer: string;
   expires_at: string;
   approved?: boolean;
+  approved_at?: string;
 };
 type Code = {
   client_id: string;
@@ -213,6 +214,23 @@ function signClientPayload(payload: string, secret: string): string {
   return createHmac("sha256", secret).update(payload).digest("base64url");
 }
 
+function authorizationCode(requestId: string, clientId: string, secret: string): string {
+  return createHmac("sha256", secret)
+    .update("authorization-code\0")
+    .update(requestId)
+    .update("\0")
+    .update(clientId)
+    .digest("base64url");
+}
+
+function authorizationRedirect(record: AuthRequest, code: string): Response {
+  const target = new URL(record.redirect_uri);
+  target.searchParams.set("code", code);
+  target.searchParams.set("state", record.state);
+  target.searchParams.set("iss", record.issuer);
+  return Response.redirect(target, 302);
+}
+
 function encodeClient(client: Client, secret: string): string {
   const payload = Buffer.from(JSON.stringify(client)).toString("base64url");
   return `${payload}.${signClientPayload(payload, secret)}`;
@@ -359,11 +377,14 @@ export async function approveAuthorization(request: Request, store: Store): Prom
   const requestKey = `requests/${id}`;
   const current = await loadForUpdate<AuthRequest>(store, requestKey);
   const record = current?.record;
-  if (!record || record.approved || Date.parse(record.expires_at) <= Date.now()) return html(400, "<!doctype html><meta charset=utf-8><p>授权已失效，请回到 ChatGPT 重试。</p>");
+  if (!record || Date.parse(record.expires_at) <= Date.now()) return html(400, "<!doctype html><meta charset=utf-8><p>授权已失效，请回到 ChatGPT 重试。</p>");
   if (!expected || !supplied || !await safeSecretEqual(expected, supplied)) return html(403, "<!doctype html><meta charset=utf-8><p>授权码不对。</p>");
-  const claimed = await store.setJSON(requestKey, { ...record, approved: true }, { onlyIfMatch: current.etag, ...expiryOptions(record.expires_at) });
-  if (!claimed.modified) return html(400, "<!doctype html><meta charset=utf-8><p>授权已失效，请回到 ChatGPT 重试。</p>");
-  const code = randomToken(32);
+  const code = authorizationCode(id, record.client_id, expected);
+  if (record.approved) {
+    if (!record.approved_at || Date.parse(record.approved_at) + CODE_TTL_MS <= Date.now()) return html(400, "<!doctype html><meta charset=utf-8><p>授权已失效，请回到 ChatGPT 重试。</p>");
+    return authorizationRedirect(record, code);
+  }
+  const approvedAt = new Date().toISOString();
   const codeRecord: Code = {
     client_id: record.client_id,
     redirect_uri: record.redirect_uri,
@@ -374,12 +395,13 @@ export async function approveAuthorization(request: Request, store: Store): Prom
     used: false,
   };
   await store.setJSON(`codes/${await digest(code)}`, codeRecord, expiryOptions(codeRecord.expires_at));
-  await store.delete(requestKey);
-  const target = new URL(record.redirect_uri);
-  target.searchParams.set("code", code);
-  target.searchParams.set("state", record.state);
-  target.searchParams.set("iss", record.issuer);
-  return Response.redirect(target, 302);
+  const claimed = await store.setJSON(requestKey, { ...record, approved: true, approved_at: approvedAt }, { onlyIfMatch: current.etag, ...expiryOptions(record.expires_at) });
+  if (!claimed.modified) {
+    const latest = await load<AuthRequest>(store, requestKey);
+    if (!latest?.approved || !latest.approved_at || Date.parse(latest.approved_at) + CODE_TTL_MS <= Date.now()) return html(400, "<!doctype html><meta charset=utf-8><p>授权已失效，请回到 ChatGPT 重试。</p>");
+    return authorizationRedirect(latest, authorizationCode(id, latest.client_id, expected));
+  }
+  return authorizationRedirect(record, code);
 }
 
 async function issueTokens(store: Store, clientId: string, scope: string, tokenResource: string): Promise<Json> {
